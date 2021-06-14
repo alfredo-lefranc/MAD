@@ -1,0 +1,589 @@
+---
+title: "Examen Parcial"
+author: "Alfredo Lefranc"
+date: "19 de octubre de 2020"
+output:
+  html_document:
+    theme: spacelab
+    df_print: paged
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Nota: Para este examen me basé en los códigos vistos en clase y los que realicé en las tareas 1 y 2. Sobra decir que también me apoyé en foros de internet, como _Stack Overflow_.
+
+## Presentación de los datos
+
+El primer paso es limpiar el ambiente de trabajo y cargar las librerías básicas que voy a usar.
+```{r, message=FALSE, warning=FALSE, include=FALSE}
+rm(list = ls())
+
+library(readr)
+library(stringr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+
+
+```
+
+Cargo el archivo `metadata.R` generado en el ejercicio anterior, junto con el archivo `utils.R`. 
+```{r}
+source("metadata.R"  , encoding = 'UTF-8')
+source("utils.R"     , encoding = 'UTF-8')
+```
+
+Al cargar la base aparecen una serie de advertencias.
+```{r}
+imports <- read_csv("imports-85.csv", 
+                      col_names = colnames_imports,
+                      na = 'XXXXXXX')
+
+```
+```{r}
+problems(imports)
+```
+
+Sucede el mismo problema que nos topamos en el ejemplo de algas. El problema puede observarse en la fila 58:
+
+```{r}
+imports[58,]
+```
+
+La columna `curb_weight` (columna 14), tiene unidas a dos celdas. Es necesario separarlas. Se repite el procedimiento visto en clase, con las modificaciones necesarias para que no hayan incompatibilidades en los tipos de datos. El procedimiento incluye la limpieza previa de los nombres de las columnas para poder manipular los datos.
+
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+
+colnames(imports) <- colnames_imports
+
+colnames(imports) <- imports_clean_colnames(colnames_imports)
+
+# función
+imports_clean_colnames <- function(x){
+  str_replace_all(tolower(x),"[-]", "_")
+}
+
+
+problematic_rows <- readr::problems(imports)$row
+
+imports[problematic_rows,] <- imports %>% 
+  slice(problematic_rows) %>% 
+  unite(col='all', -seq(1:13), sep = "/", remove=TRUE) %>% 
+  extract('all', into = c("curb_weight", "engine_type", 'resto'), 
+          regex="([0-9]*)([a-z]*)/(.*)/NA", remove=TRUE) %>% 
+  separate('resto', into=names(imports)[16:26], sep="/", remove=TRUE) %>%
+  readr::type_convert() %>%
+  mutate(across(c("wheel_base",
+                  "price",
+                  "peak_rpm",
+                  "horsepower",
+                  "engine_size",
+                  "curb_weight"),
+                as.character))
+
+
+```
+
+Al revisar cómo quedan los datos, noto que la variable `wheel_base` es de texto cuando debería ser numérica. Revisando los datos, encuentro que el problema es una observación escrita en texto. Hago la corrección. Además, la categoría de mercedes-benz en `make` aparece dos veces por un typo.
+```{r, message=FALSE, warning=FALSE, eval=FALSE}
+imports$wheel_base[imports$wheel_base == "ninetyfivedot7"] <- "95.7"
+imports_data$make[imports_data$make == "mercedes-bens"] <- "mercedes-benz"
+```
+
+Una vez corregido esto, hago la conversión de tipo de datos manualmente para que las variables leídas incorrectamente sean corregidas por R. Antes, claro, deben reemplazarse los `?` por `NA's`.
+```{r, eval=FALSE}
+
+# función
+imports_clean_data <- function(x){
+  str_replace_all(tolower(x),"[?]", replacement = NA_character_)
+}
+
+imports <- imports %>% 
+  mutate_at(c(2,6,19,20,22,23,26), list(imports_clean_data))
+
+
+imports <- readr::type_convert(imports)
+
+imports  <- imports %>% 
+  mutate_at(c(1,3:9,15,16,18),list(as.factor))
+```
+
+Con el último comando convierto las variables de texto a variables categóricas, y también la variable `symboling`:
+
+Los pasos anteriores en realidad los corro con los archivos por separado, como pide el ejercicio 1.2 (el código es el mismo, sólo que en este documento uso la base `imports` como ejemplo para no confundir con la base que se usa en adelante, `imports_data`:
+
+```{r, message=FALSE, warning=FALSE}
+source("00-load.R"   , encoding = 'UTF-8')
+source("01-prepare.R", encoding = 'UTF-8')
+source("02-clean.R",   encoding = 'UTF-8')
+```
+
+Después de correr los archivos separados para cargar y limpiar la base, reviso que las variables sean del tipo indicado en el archivo _imports-85.names_.
+
+```{r}
+glimpse(imports_data)
+```
+
+El tipo de todas las variables coincide. Ahora procedo a realizar en análisis exploratorio de los datos.
+
+## EDA
+
+Primero reviso el resumen estadístico:
+```{r}
+summary(imports_data)
+```
+
+Aquí debe notarse la presencia de NAs. 
+```{r}
+colnames(imports_data)[colSums(is.na(imports_data)) > 0]
+nrow(imports_data[!complete.cases(imports_data),])
+```
+Hay 7 columnas y 46 observaciones con NAs. Replico la función vista en clase para explorar si los NA's están concentrados en algunas observaciones específicas.
+```{r, eval=FALSE}
+indices_con_NAs <- function(df, porcentaje=0.2) {
+    n <- ifelse (porcentaje < 1, 
+        as.integer(porcentaje  * ncol(df)),
+        stop("Introucir el porcentaje de columnas con NAs.")
+    )
+    indices <- which( apply(df, 1, function(x) sum(is.na(x))) > n )
+    if (!length(indices)) {
+        warning("No hay observaciones con tantos NAs ")
+    }
+    indices
+}
+```
+Aplico la función a la base, con un valor crítico de 20%.
+```{r}
+indices_con_NAs(imports_data,0.2)
+```
+Esta es una buena noticia. Por el momento los NA's serán excluidos del EDA, sin quitar observaciones. Éstas simplemente serán ignoradas.
+
+### Gráficas
+
+Para facilitar el análisis, subdivido la base en variables numéricas y categóricas.
+```{r, message=FALSE, warning=FALSE}
+imp_num <- imports_data %>% 
+  dplyr::select_if(is.numeric)
+
+imp_colnames_num <- colnames(imp_num)
+
+imp_fac <- imports_data %>% 
+  dplyr::select_if(is.factor)
+
+imp_colnames_fac <- colnames(imp_fac)
+
+```
+
+#### Una sola variable 
+
+Histogramas y densidad de las variables numéricas
+```{r, message=FALSE, warning=FALSE}
+
+imports_longer <- imp_num %>%
+  pivot_longer(cols = all_of(imp_colnames_num),
+               names_to = "datos",
+               values_to= "val")
+
+hist_plot <- ggplot(imports_longer, aes(val)) + 
+  geom_histogram((aes(y = ..density..)), color = "black", fill = "gray") +
+  geom_density(color = "blue") +
+  facet_wrap(~ datos, scales = "free", ncol = 4) +
+  ggtitle("HISTOGRAM PLOTS") +
+  theme_light() +
+  scale_fill_brewer()
+
+hist_plot
+
+```
+
+Aquí podemos notar varios puntos:
+
+* La variable curb-weight probablemente tiene un valor aberrante muy alto, que impide visualizar la distribución de los datos.
+* `compression_ratio` es bimodal, si bien la frecuencia de los datos en la primera moda es mucho mayor.
+* El precio tiene una distribución inclinada hacia la derecha, con una media alrededor del 10,000 y una cola derecha ancha.
+* Las variables `bore`, `peak_rpm` y `width` tienen dos picos, no tan separados uno del otro.
+
+Ninguna de las variables parece tener una distribución normal. Esto podemos verificarlo con las gráficas QQ-Plot.
+
+```{r, warning=FALSE, message=FALSE}
+library(purrr)
+qqgraph <- function(x){
+  qqnorm(x, main=, ylab="", xlab="", pch=16)
+  qqline(imp_num)
+}
+
+par(mfrow=c(1,4))
+map(imp_num, qqgraph)
+```
+
+Estas gráficas confirman que ninguna de las variables tiene una distribución normal.
+
+- ¿Outliers? 
+
+
+```{r, warning=FALSE, message=FALSE}
+
+box_plot <- ggplot(imports_longer, aes(x = datos, y = val)) + 
+  geom_boxplot(outlier.size = .05) +
+  facet_wrap(~ datos, scale = "free") + 
+  coord_flip() +
+  ggtitle("BOX PLOTS") +
+  theme_light()
+
+box_plot
+
+```
+
+* `bore` y `height` son las únicas variables sin outliers.
+* `curb_weight`, `engine_size`, `horsepower` y `price` tienen muchos outliers en la cola derecha, y una propoción alta de valores concentrados del lado izquierdo, sin ser negativos. Esto apunta a una transformación logarítmica de estas variables.
+
+```{r}
+log_imp <- mutate_at(imports_data,c("curb_weight", "engine_size", "horsepower", "price"), log)
+
+imp_num <- log_imp %>% 
+  dplyr::select_if(is.numeric)
+
+translog <- dplyr::select(log_imp,c("curb_weight", "engine_size", "horsepower", "price"))
+
+log_colnames <- colnames(translog)
+
+```
+
+Vuelvo a graficar los boxplots para las variables transformadas.
+```{r, warning=FALSE, message=FALSE}
+log_longer <- translog %>%
+  pivot_longer(cols = all_of(log_colnames),
+               names_to = "datos",
+               values_to= "val")
+
+box_plot2 <- ggplot(log_longer, aes(x = datos, y = val)) + 
+  geom_boxplot(outlier.size = .05) +
+  facet_wrap(~ datos, scale = "free") + 
+  coord_flip() +
+  ggtitle("BOX PLOTS") +
+  theme_light()
+
+box_plot2
+
+```
+
+La distribución de las variables `engine_size`, `horsepower` y `price` se puede apreciar de mejor manera con la transformación, pero para `curb_weight` lo ideal parece ajustar la gráfica para excluir esos valores. ¿Será que hay valores con ceros extra?
+
+```{r, warning=FALSE, message=FALSE}
+curb <- imports_data %>% filter(curb_weight<50000)
+ggplot(curb, aes(curb_weight)) +
+  geom_histogram((aes(y=..density..)), color = "black") +
+  geom_density(color = "blue") +
+  theme_light() +
+  scale_fill_brewer()
+
+
+```
+
+Excluyendo los cuatro valores aberrantes, la distribución de curb_weight se aprecia mucho mejor.
+
+Ahora examinemos la distribución de los datos de acuerdo con las variables categóricas.
+```{r}
+ggplot(imp_fac, aes(make)) + geom_bar() + ylab("") + theme(axis.text.x=element_text(angle=90,hjust=1)) 
+```
+
+Notamos que Toyota es el fabricante más común, seguido por (unas 15 observaciones detrás) Nissan y Mazda; Honda es el cuarto fabricante más popular, los cuatro japoneses.
+
+Ahora grafico las demás variables categóricas con gráficas de barras.
+```{r}
+imports_longer2 <- imp_fac[,-2] %>%
+  pivot_longer(cols = all_of(imp_colnames_fac[-2]),
+               names_to = "datos",
+               values_to= "val")
+
+bar_plot <- ggplot(imports_longer2, aes(val)) + 
+  geom_bar() +
+  facet_wrap(~ datos, scales = "free", ncol = 4) +
+  ggtitle("BAR PLOTS") +
+  theme_light() +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  scale_fill_brewer()
+
+bar_plot
+```
+
+Los datos están concentrados en varias de las categorías anteriores:
+
+1. `aspiration`: standard
+2. motor ubicado en la parte delantera
+3. gasolina como combustible
+4. 4 cilindros
+5. motor tipo ohc
+6. un sistema de combustible mpfi o 2bbl
+
+
+
+#### Dos variables
+
+Gráfica de barras ilustrativa para la variable `make`.
+
+```{r}
+
+imp_fac %>% count(make, fuel_type) %>%
+ggplot(aes(fill=fuel_type, x=make, y=n)) +
+  geom_bar(position="stack", stat="identity") +
+  theme(axis.text.x=element_text(angle=90,hjust=1))
+
+```
+
+Esta gráfica nos muestra qué fabricantes cuentan con modelos que corren con diesel. Como este ejemplo muestra, `make` puede ser una fuente importante de heterogeneidad en los datos.
+
+
+A continuación grafico las combinaciones de variables categóricas.
+```{r, message=FALSE, warning=FALSE}
+library(GGally)
+
+imp_fac_a <- imp_fac[,c(3:8)]
+imp_fac_b <- imp_fac[,c(1,9:11)]
+
+bivar_a <- ggpairs(imp_fac_a,
+  title = "Imports", 
+  mapping = ggplot2::aes(colour = drive_wheels), 
+      lower = list(continuous = wrap("points", 
+                                     alpha = 0.3, 
+                                     size = 0.1, 
+                                     color = 'blue'), 
+                   discrete = "facetbar", 
+                   combo = "facethist"), 
+      diag = list(discrete ="barDiag", 
+                  continuous = wrap("densityDiag", 
+                                    alpha = 0.2, 
+                                    color = 'blue' )), 
+      upper = list(combo = wrap("box_no_facet", 
+                                alpha = 0.5),
+                   continuous = wrap("cor", 
+                                     size = 4, 
+                                     alignPercent = 0.6))) + 
+  theme(panel.grid.major = element_blank())
+
+bivar_b <- ggpairs(imp_fac_b,
+  title = "Imports", 
+  mapping = ggplot2::aes(colour = symboling), 
+      lower = list(continuous = wrap("points", 
+                                     alpha = 0.3, 
+                                     size = 0.1, 
+                                     color = 'blue'), 
+                   discrete = "facetbar", 
+                   combo = "facethist"), 
+      diag = list(discrete ="barDiag", 
+                  continuous = wrap("densityDiag", 
+                                    alpha = 0.2, 
+                                    color = 'blue' )), 
+      upper = list(combo = wrap("box_no_facet", 
+                                alpha = 0.5),
+                   continuous = wrap("cor", 
+                                     size = 4, 
+                                     alignPercent = 0.6))) + 
+  theme(panel.grid.major = element_blank())
+
+
+bivar_a
+bivar_b
+
+```
+
+Las gráficas muestran barras encimadas sobre la diagonal (menos para `drive_wheels`, que es la variable de relleno, con rojo para 4wd, verde para fwd y azul para rwd). En la parte superior se muestran volúmenes para denotar la proporción de los niveles en cada categoría, de forma cruzada. La parte de abajo muestra barras individuales para cada combinación de categorías, y como puede (no) verse, muchas de las combinaciones son muy escasas. 
+Ambas gráficas muestran ciertas coincidencias en las concentraciones de los datos por categorías. Es decir, las observaciones que están concentradas, por ejemplo, en `fuel_type = gas`, también están concentradas en `aspiration = standard`. Esa coincidencia en concentraciones es particularmente clara, aunque también se observa lo mismo con los autos con motores en la parte delantera, `aspiration = standard`, gasolina como combustible y autos con cuatro puertas. El caso de la segunda gráfica es muy similar.
+
+
+Continúo con las variables numéricas.
+```{r, message=FALSE, warning=FALSE}
+imp_num_a <- imp_num[,c(1:7,15)]
+imp_num_b <- imp_num[,8:15]
+
+bivar_num_a <- ggpairs(imp_num_a,
+  title = "Imports",
+    lower = list(continuous = wrap("points", 
+                                   alpha = 0.3, 
+                                   size = 0.1, 
+                                   color = 'blue')), 
+    diag = list(continuous = wrap("densityDiag", 
+                                  alpha = 0.3)), 
+    upper = list(continuous = wrap("cor", size = 4, 
+                                   alignPercent = 0.6))) + 
+  theme(panel.grid.major = element_blank())
+
+bivar_num_b <- ggpairs(imp_num_b,
+  title = "Imports",
+    lower = list(continuous = wrap("points", 
+                                   alpha = 0.3, 
+                                   size = 0.1, 
+                                   color = 'blue')), 
+    diag = list(continuous = wrap("densityDiag", 
+                                  alpha = 0.3)), 
+    upper = list(continuous = wrap("cor", size = 4, 
+                                   alignPercent = 0.6))) + 
+  theme(panel.grid.major = element_blank())
+
+bivar_num_a
+bivar_num_b
+
+```
+
+La primera gráfica muestra casi exclusivamente correlaciones positivas, a excepción de `height` y `normalized losses`. Es de destacar que todas estas variables mantienen una relación positiva y estadísticamente significativa con el precio, y la correlación entre precio y el tamaño del motor es de 0.844. Las correlaciones entre precio y largo, ancho y `wheel_base` también son altas. Ahora bien, es probable que la correlación entre las propias variables explicativas sea la razón de la consistencia en la relación entre precio y otras variables.
+La segunda tanda de variables muestra relaciones más variadas, desde la correlación casi perfecta entre millas por galón en ciudad y en carretera, hasta líneas casi planas y coeficientes cercanos a cero. 
+
+Como no se cubren todas las combinaciones, agrego esta gráfica. Además, en ésta es más fácil identificar relaciones entre variables por los colores condicionales.
+
+```{r, warning=FALSE, message=FALSE}
+library(gclus)
+imp.cor <- cor(imp_num)
+imp.color <- dmat.color(imp.cor)
+cpairs(imp_num, panel.colors=imp.color,
+       pch=".", gap=.5)
+```
+
+En esta gráfica es más fácil ver las variables que están correlacionadas. Los pares en verde tienen una asociación positiva.
+
+#### Multivariado
+
+Primero uso la gráfica `ggparcoord` para ver el comportamiento general de las observaciones en relación a sus características.
+
+
+```{r, message=FALSE, warning=FALSE}
+library(GGally)
+
+ggparcoord(data = imp_num, scale="uniminmax", alphaLines=0.2) + 
+  xlab("") + ylab("") +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) 
+
+```
+De manera general, esta gráfica nos muestra lo mismo que el análisis univariado. Hay concentraciones y presencia de valores aberrantes en variables como `ln_curb_weight` y `compression_ratio`. También se nota una relación inversa entre las millas por galón y el precio. Las líneas casi horizontales entre `city_mpg` y `highway_mpg` nos dicen que las variables tienen una correlación muy alta.
+
+Ahora incorporo algunas variables categóricas al análisis. Una de las variables que se usan es `symboling`, y para simplificar el análisis, creo la variable `symbols` con dos niveles, `"safe"` para los niveles no negativos y `"risky"` para los negativos.
+```{r}
+symbols <- within(log_imp,
+                    safe <- ifelse(symboling == "0" | symboling=="1" | 
+                                     symboling=="2" | symboling=="3",
+                                   "safe", "risky"))
+```
+
+Con esta variable, junto con `drive_wheels` y `fuel_type`, genero las gráficas.
+
+```{r, warning=FALSE, message=FALSE}
+b1 <- ggparcoord(log_imp, columns = c(2,10:14), scale="uniminmax",
+           groupColumn = "drive_wheels") +
+  xlab("") + ylab("") +
+  theme(axis.ticks.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_blank())
+
+b2 <- ggparcoord(log_imp, columns = c(2,10:14), scale="uniminmax",
+           groupColumn = "fuel_type") +
+  xlab("") + ylab("") + 
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(angle=90,hjust=1)) +
+  scale_colour_manual(values = c("green","grey"))
+
+b3 <- ggparcoord(symbols[order(symbols$symboling, decreasing=TRUE),],
+           columns=c(2,10:14),
+           groupColumn="safe", scale="uniminmax") +
+  xlab("") + ylab("") + 
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(angle=90,hjust=1)) +
+  scale_colour_manual(values = c("red","grey"))
+
+
+c1 <- ggparcoord(log_imp, columns = 19:26, scale="uniminmax",
+           groupColumn = "drive_wheels") +
+  xlab("") + ylab("") +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
+
+c2 <- ggparcoord(log_imp, columns = 19:26, scale="uniminmax",
+           groupColumn = "fuel_type") +
+  xlab("") + ylab("") + 
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(angle=90,hjust=1)) +
+  scale_colour_manual(values = c("green","grey"))
+
+c3 <- ggparcoord(symbols[order(symbols$symboling, decreasing=TRUE),],
+           columns=c(19:26),
+           groupColumn="safe", scale="uniminmax") +
+  xlab("") + ylab("") +
+  theme(axis.ticks.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x=element_text(angle=90,hjust=1)) +
+  scale_colour_manual(values = c("red","grey"))
+
+gridExtra::grid.arrange(b1, b2, nrow=2)
+```
+
+Los autos con diesel tienen dimensiones más grandes. La tendencia es similar, pero menos marcada, para los autos con `drive_wheels` rwd.
+```{r}
+gridExtra::grid.arrange(c1, c2, nrow=2)
+```
+El segundo grupo de variables se diferencia por lo general en términos de `drive_wheels`, sobre todo fwd y rwd: las observaciones se separan en términos de caballos de fuerza, precio (superiores para rwd) y millas por galón (inferiores para rwd).
+Los autos con diesel tienen un `compression_ratio` claramente más alto. En cuanto a caballos de fuerza y `peak_rpm`, estos vehículos tienen niveles relativamente bajos. En cuanto al precio, están por encima de la media.
+```{r}
+gridExtra::grid.arrange(b3,c3, nrow=2)
+
+```
+
+En cuanto al riesgo asignado, los vehículos riesgosos se caracterizan por ser de mayores dimensiones, tener pérdidas normalizadas menores, un precio por encima de la media, y un rendimiento de la gasolina relativamente bajo.
+
+El segundo tipo de gráficas que examino son las de análisis de componentes principales. Este análisis debe hacerse omitiendo las variables faltantes.
+
+```{r}
+imp.pca <- prcomp(imp_num[complete.cases(imp_num),],
+                  center = TRUE, scale. = TRUE)
+
+summary(imp.pca)
+```
+
+
+Procedo a hacer una primera exploración de este gráfico.
+```{r, warning=FALSE, message=FALSE}
+library(devtools)
+library(ggbiplot)
+
+ggbiplot(imp.pca)
+```
+
+Antes que nada, hacer un PCA con tantas variables dificulta la visualización del gráfico. No obstante, desde esta primera exploración se observan algunos puntos:
+* `city_mpg` aporta poca variación extra ya considerando a `highway_mpg`, por lo que puede omitirse una de las variables sin una pérdida significativa de variación en los datos.
+* `width` y `ln_curb_weight` igual pueden omitirse porque son parecidas a `length`.
+* `ln_engine_size` es casi igual a `ln_price` en el gráfico. Esto es un hallazgo importante, pues nos habla de una colinealidad alta entre estas variables y un potencial predictor del precio en la etapa del modelado.
+* `stroke` añade muy poca variación a la muestra, así que también la quito para el análisis subsecuente.
+
+```{r}
+imp.pca <- prcomp(imp_num[complete.cases(imp_num),-c(4,6,7,9,13)],
+                  center = TRUE, scale. = TRUE)
+
+ggbiplot(imp.pca)
+```
+
+En contraste con el primer gráfico de PCA, los componentes 1 y 2 capturan más varianza. Esto se debe a que, al omitir las otras variables, la varianza de la muestra se redujo en menor medida que la capturada por el modelo. Además, en este modelo se ve más claramente que la combinación lineal de `highway_mpg`, `ln_horsepower`, `ln_price`, `bore`, `length` y `wheel_base` son las variables que más varianza aportan dentro del primer componente, que a su vez es el más predictivo.
+
+Finalmente, agrego información de las variables categóricas al análisis al examinar la presencia de clusters en el PCA. Muestro lo correspondiente para las variables `symboling`, `fuel_system` y `engine_type`.
+
+```{r}
+# por symboling. 
+ggbiplot(imp.pca, ellipse = TRUE, groups = imp_fac$symboling[complete.cases(imp_num)])
+
+# fuel_system
+ggbiplot(imp.pca, ellipse = TRUE, groups = imp_fac$fuel_system[complete.cases(imp_num)])
+
+# engine_type.
+ggbiplot(imp.pca, ellipse = TRUE, groups = imp_fac$engine_type[complete.cases(imp_num)])
+
+```
+
+Se ve que el grupo 3 está clusterizado en el extremo de `normalized losses`. También se observa una fuerte clusterización por la variable `engine_type`.
+
