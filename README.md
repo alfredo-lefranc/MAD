@@ -1,26 +1,29 @@
-# MAD
+# Data Mining and Analysis (MAD in Spanish)
 
-Este repositorio contiene el examen parcial de la materia Minería y Análisis de Datos, de la maestría de Ciencia de Datos del ITAM, impartida por Juan Mármol en el otoño de 2020.
+This repository contains the midterm exam for the course Data Mining and Analysis, part of the master's program in Data Science at ITAM, taught by Juan Mármol in the fall of 2020.
 
-Instrucciones:
+Instructions:
 
-Ejercicio 1
+Exercise 1
 
-El propósito de este ejercicio es escribir guiones para la carga, preparación y limpieza de datos del data set imports.csv en una manera reproducible. Para ello debes:
+The purpose of this exercise is to write scripts for loading, preparing, and cleaning the data from the dataset imports.csv in a reproducible manner. To do this, you must:
 
-1) Crear un guión en bash que obtenga del archivo imports-85.names los nombres de las columnas del conjunto de datos; y que genere un guión que se llame metadata.R con la asignación del vector de nombres de columnas. (Generación automática del guión metadata.R)
+Create a bash script that obtains the column names from the imports-85.names file and generates a script called metadata.R with the assignment of the column names vector. (Automatic generation of the metadata.R script)
 
-2) Crear los siguiente guiones en R:
+Create the following R scripts:
 
-	utils.R: Funciones generales a utilizarse en el proceso de preparación y limpieza 
-      00-load.R: Cargue el archivo
-   01-prepare.R: Preparar los datos (i.e. asignar nombres a las columnas) 
-     02-clean.R: Limpiar el archivo de posibles errores de carga
+utils.R: General functions to be used in the data preparation and cleaning process
 
-Ejercicio 2
+00-load.R: Load the file
 
-El propósito de este ejercicio es realizar un análisis exploratorio sobre los datos. Este análisis debe hacerse teniendo en cuenta que el objetivo final es predecir el precio de un vehículo a partir de las covariables con las que contamos (la predicción no es requerida en el examen).
+01-prepare.R: Prepare the data (i.e., assign names to the columns)
 
-Para facilitar la observación de las combinaciones de las covariables se deberá generar un dashboard en shiny.
+02-clean.R: Clean the file of possible loading errors
 
-La presentación tanto de los datos antes y después del proceso de limpieza, así como los hallazgos del análisis exploratorio deben ser predentados en un archivo html generado a partir de un archivo Rmd.
+Exercise 2
+
+The purpose of this exercise is to perform an exploratory analysis of the data. This analysis should be done with the final goal of predicting the price of a vehicle based on the available covariates (the prediction is not required in the exam).
+
+To facilitate the observation of the covariate combinations, a dashboard in Shiny must be generated.
+
+The presentation of both the data before and after the cleaning process, as well as the findings of the exploratory analysis, should be presented in an HTML file generated from an Rmd file.
